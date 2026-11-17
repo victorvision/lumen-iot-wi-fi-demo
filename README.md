@@ -4,7 +4,7 @@ Wi-Fi, HTTP, MQTT and display update library for the ESP32 and Smart Plus Displa
 
 ## Overview
 
-Lumen IoT Wi-Fi connects a Smart  Plus Display to the network through an ESP32. The ESP32 and the display talk by serial communication (UART). The library keeps all the network logic inside. You call simple C functions.
+Lumen IoT Wi-Fi connects a Smart Plus Display to the network through an ESP32. The ESP32 and the display talk by serial communication (UART). The library keeps all the network logic inside. You call simple C functions.
 
 Tasks that need a lot of code are done with one function call, for example:
 
@@ -187,3 +187,5 @@ The connection state is `1` when connected and `0` when not. The signal level go
 ## Example project
 
 This repository includes an example project. It shows some of the library functions and how the display and the ESP32 work together over Wi-Fi.
+
+The ESP32 model used to test this example project was the ESP-WROOM-32.

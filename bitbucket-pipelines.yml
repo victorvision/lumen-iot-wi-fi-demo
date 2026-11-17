@@ -1,0 +1,11 @@
+pipelines:
+  default:
+    - step:
+        name: Sync GitHub Mirror
+        image: alpine/git:latest
+        clone:
+          enabled: false
+        script:
+          - git clone --branch master --single-branch --bare git@bitbucket.org:victorvisionpd/lumen-iot-wi-fi-demo.git
+          - cd lumen-iot-wi-fi-demo.git
+          - git push --mirror git@github.com:victorvision/lumen-iot-wi-fi-demo.git

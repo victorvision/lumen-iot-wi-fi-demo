@@ -127,7 +127,7 @@ void app_main(void)
         .baud_rate = 115200,
         .rx_buffer_size = 1024,
     };
-
+    vTaskDelay(pdMS_TO_TICKS(3000));
     ESP_ERROR_CHECK(lumen_iot_wifi_init(&uart_config));
     lumen_iot_net_init();
 
