@@ -189,3 +189,11 @@ The connection state is `1` when connected and `0` when not. The signal level go
 This repository includes an example project. It shows some of the library functions and how the display and the ESP32 work together over Wi-Fi.
 
 The ESP32 model used to test this example project was the ESP-WROOM-32.
+
+# Licensing / Third-Party Dependencies & Notices
+
+This library and example project depend on external components whose licenses are separate from the [MIT License](LICENSE) governing this repository's own code:
+
+- **ESP-IDF** (Apache License 2.0) and its bundled components (including FreeRTOS, lwIP, mbedTLS, cJSON, MQTT, HTTP client, Wi-Fi, NVS, and drivers).
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and your local ESP-IDF `COPYRIGHT` / `LICENSE` files for details, especially when distributing compiled firmware binaries.
