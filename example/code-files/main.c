@@ -33,8 +33,6 @@
 #define WIFI_AUTO_CONNECT_TOGGLE_ADDRESS 231
 
 #define WEATHER_URL "URL_HERE"
-#define OTA_DEFAULT_BAUDRATE 115200
-#define OTA_TRANSFER_BAUDRATE k892857
 #define REBOOT_ADDRESS 102
 
 static const char *s_ota_url = "URL_HERE";
@@ -46,7 +44,7 @@ static bool s_mqtt_initialized = false;
 
 static void send_project_task(void *pvParameters)
 {
-    esp_err_t err = lumen_iot_display_update_project(s_ota_url, REBOOT_ADDRESS, OTA_DEFAULT_BAUDRATE, OTA_TRANSFER_BAUDRATE);
+    esp_err_t err = lumen_iot_display_update_project(s_ota_url, REBOOT_ADDRESS);
     if (err != ESP_OK)
     {
         ESP_LOGE("ota", "Fail to send project: %s", esp_err_to_name(err));
@@ -57,7 +55,7 @@ static void send_project_task(void *pvParameters)
 
 static void send_firmware_task(void *pvParameters)
 {
-    esp_err_t err = lumen_iot_display_update_firmware(s_ota_url_fw, REBOOT_ADDRESS, OTA_DEFAULT_BAUDRATE, OTA_TRANSFER_BAUDRATE);
+    esp_err_t err = lumen_iot_display_update_firmware(s_ota_url_fw, REBOOT_ADDRESS);
     if (err != ESP_OK)
     {
         ESP_LOGE("ota", "Fail to send firmware: %s", esp_err_to_name(err));

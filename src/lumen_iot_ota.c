@@ -12,37 +12,12 @@
 #define LUMEN_IOT_OTA_BLOCK_SIZE 1660
 #define LUMEN_IOT_OTA_TICK_INTERVAL_MS 10
 #define LUMEN_IOT_OTA_REBOOT_WAIT_MS 2500
-#define LUMEN_IOT_OTA_NEGOTIATION_TIMEOUT_MS 5000
 #define LUMEN_IOT_OTA_SEND_TIMEOUT_MS 5000
 #define LUMEN_IOT_OTA_FINISH_TIMEOUT_MS 5000
 
 static const char *TAG = "lumen_iot_ota";
 
 typedef bool (*lumen_iot_ota_send_fn)(uint8_t *data, uint32_t length);
-
-static uint32_t lumen_iot_ota_baudrate_enum_to_uint32(lumen_baudrate_serial_update_t baudrate)
-{
-    switch (baudrate)
-    {
-    case k115200:
-        return 115200;
-    case k250000:
-        return 250000;
-    case k694444:
-        return 694444;
-    case k892857:
-        return 892857;
-    case k1250000:
-        return 1250000;
-    case k2083333:
-        return 2083333;
-    case k3125000:
-        return 3125000;
-    default:
-        ESP_LOGE(TAG, "unknown baudrate enum (%d), falling back to 115200", (int)baudrate);
-        return 115200;
-    }
-}
 
 static void lumen_iot_ota_send_reboot_packet(uint16_t reboot_address)
 {
@@ -56,48 +31,6 @@ static void lumen_iot_ota_tick_delay(void)
 {
     lumen_project_and_firmware_update_tick(LUMEN_IOT_OTA_TICK_INTERVAL_MS);
     vTaskDelay(pdMS_TO_TICKS(LUMEN_IOT_OTA_TICK_INTERVAL_MS));
-}
-
-static esp_err_t lumen_iot_ota_negotiate_baudrate(lumen_baudrate_serial_update_t transfer_baudrate)
-{
-    int64_t last_tick_us = esp_timer_get_time();
-    int retries = 0;
-    int loop_count = 0;
-    bool negotiated = false;
-
-    while (!negotiated)
-    {
-        negotiated = lumen_project_and_firmware_update_set_new_baudrate(transfer_baudrate);
-        if (negotiated)
-        {
-            break;
-        }
-
-        int64_t now_us = esp_timer_get_time();
-        if (now_us - last_tick_us >= (int64_t)LUMEN_IOT_OTA_TICK_INTERVAL_MS * 10000)
-        {
-            lumen_project_and_firmware_update_tick(LUMEN_IOT_OTA_TICK_INTERVAL_MS);
-            last_tick_us = now_us;
-
-            retries++;
-            if (retries > 500)
-            {
-                ESP_LOGW(TAG, "waiting for ack baudrate, attempt %d", retries);
-                return ESP_ERR_TIMEOUT;
-            }
-        }
-
-        loop_count++;
-        if (loop_count >= 50)
-        {
-            loop_count = 0;
-            vTaskDelay(1);
-        }
-    }
-
-    esp_err_t err = lumen_iot_set_uart_baudrate(lumen_iot_ota_baudrate_enum_to_uint32(transfer_baudrate));
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    return err;
 }
 
 static esp_err_t lumen_iot_ota_send_block(lumen_iot_ota_send_fn send_fn, uint8_t *data, uint32_t length)
@@ -116,7 +49,7 @@ static esp_err_t lumen_iot_ota_send_block(lumen_iot_ota_send_fn send_fn, uint8_t
     return ESP_OK;
 }
 
-static esp_err_t lumen_iot_ota_finish_and_reset(uint32_t default_baudrate)
+static esp_err_t lumen_iot_ota_finish_and_reset(void)
 {
     int64_t start_us = esp_timer_get_time();
 
@@ -128,13 +61,11 @@ static esp_err_t lumen_iot_ota_finish_and_reset(uint32_t default_baudrate)
         }
         lumen_iot_ota_tick_delay();
     }
-
-    esp_err_t err = lumen_iot_set_uart_baudrate(default_baudrate);
     vTaskDelay(pdMS_TO_TICKS(LUMEN_IOT_OTA_REBOOT_WAIT_MS));
-    return err;
+    return ESP_OK;
 }
 
-static esp_err_t lumen_iot_ota_stream_and_send(const char *url, lumen_iot_ota_send_fn send_fn)
+static esp_err_t lumen_iot_ota_stream_and_send(const char *url, lumen_iot_ota_send_fn send_fn, uint16_t reboot_address)
 {
     esp_http_client_config_t config = {
         .url = url,
@@ -170,6 +101,8 @@ static esp_err_t lumen_iot_ota_stream_and_send(const char *url, lumen_iot_ota_se
         return ESP_FAIL;
     }
 
+    lumen_iot_ota_send_reboot_packet(reboot_address);
+
     uint8_t buffer[LUMEN_IOT_OTA_BLOCK_SIZE];
     int64_t remaining = content_length;
 
@@ -180,15 +113,19 @@ static esp_err_t lumen_iot_ota_stream_and_send(const char *url, lumen_iot_ota_se
         {
             to_read = (int)remaining;
         }
-
-        int read_len = esp_http_client_read(client, (char *)buffer, to_read);
-
-        if (read_len <= 0)
+        int read_len = 0;
+        while (read_len < to_read)
         {
-            ESP_LOGE(TAG, "esp_http_client_read failed: %d", read_len);
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            return ESP_FAIL;
+            int n = esp_http_client_read(client, (char *)buffer + read_len, to_read - read_len);
+            if (n <= 0)
+            {
+                ESP_LOGE(TAG, "esp_http_client_read failed: %d", n);
+                esp_http_client_close(client);
+                esp_http_client_cleanup(client);
+                return ESP_FAIL;
+            }
+            read_len += n;
+            lumen_iot_ota_tick_delay();
         }
 
         err = lumen_iot_ota_send_block(send_fn, buffer, (uint32_t)read_len);
@@ -208,7 +145,7 @@ static esp_err_t lumen_iot_ota_stream_and_send(const char *url, lumen_iot_ota_se
     return ESP_OK;
 }
 
-static esp_err_t lumen_iot_ota_run(const char *url, lumen_iot_ota_send_fn send_fn, uint16_t reboot_address, uint32_t default_baudrate, lumen_baudrate_serial_update_t transfer_baudrate)
+static esp_err_t lumen_iot_ota_run(const char *url, lumen_iot_ota_send_fn send_fn, uint16_t reboot_address)
 {
     if (lumen_iot_is_ota_in_progress())
     {
@@ -217,42 +154,33 @@ static esp_err_t lumen_iot_ota_run(const char *url, lumen_iot_ota_send_fn send_f
     }
 
     lumen_iot_set_ota_in_progress(true);
-    lumen_iot_ota_send_reboot_packet(reboot_address);
 
-    esp_err_t err = lumen_iot_ota_negotiate_baudrate(transfer_baudrate);
+    esp_err_t err = lumen_iot_ota_stream_and_send(url, send_fn, reboot_address);
     if (err == ESP_OK)
     {
-        err = lumen_iot_ota_stream_and_send(url, send_fn);
-        if (err == ESP_OK)
-        {
-            err = lumen_iot_ota_finish_and_reset(default_baudrate);
-        }
-        else
-        {
-            lumen_iot_set_uart_baudrate(default_baudrate);
-        }
+        err = lumen_iot_ota_finish_and_reset();
     }
 
     lumen_iot_set_ota_in_progress(false);
     return err;
 }
 
-esp_err_t lumen_iot_display_update_firmware(const char *url, uint16_t reboot_address, uint32_t default_baudrate, lumen_baudrate_serial_update_t transfer_baudrate)
+esp_err_t lumen_iot_display_update_firmware(const char *url, uint16_t reboot_address)
 {
     if (url == NULL || url[0] == '\0')
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    return lumen_iot_ota_run(url, lumen_firmware_update_send_data, reboot_address, default_baudrate, transfer_baudrate);
+    return lumen_iot_ota_run(url, lumen_firmware_update_send_data, reboot_address);
 }
 
-esp_err_t lumen_iot_display_update_project(const char *url, uint16_t reboot_address, uint32_t default_baudrate, lumen_baudrate_serial_update_t transfer_baudrate)
+esp_err_t lumen_iot_display_update_project(const char *url, uint16_t reboot_address)
 {
     if (url == NULL || url[0] == '\0')
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    return lumen_iot_ota_run(url, lumen_project_update_send_data, reboot_address, default_baudrate, transfer_baudrate);
+    return lumen_iot_ota_run(url, lumen_project_update_send_data, reboot_address);
 }
